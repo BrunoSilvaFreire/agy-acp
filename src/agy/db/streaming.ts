@@ -142,6 +142,7 @@ export class StreamPoller {
   private _lastUserStepIdx = -1;
   private _latestSystemMessageStepIdx = -1;
   private _latestTaskCompletionStepIdx = -1;
+  private _latestStep101Idx = -1;
   private _hasBackgroundWaiting = false;
   /** Launched background task id -> idx of the first row that carried it. */
   private readonly _launchedTaskIdxs = new Map<string, number>();
@@ -284,6 +285,14 @@ export class StreamPoller {
     return this._hasRows && !this._busy && this._latestStepTerminal;
   }
 
+  get latestStep101Idx(): number {
+    return this._latestStep101Idx;
+  }
+
+  get hasStep101AfterUser(): boolean {
+    return this._latestStep101Idx > this._lastUserStepIdx && this._latestStep101Idx >= 0;
+  }
+
   /**
    * True when the latest terminal step is a safe single-idle-marker completion.
    *
@@ -308,6 +317,10 @@ export class StreamPoller {
     // Tool steps (status 3/6/7) are turn-complete candidates but must not bypass
     // the idle marker / quiescence wait, allowing agy to emit trailing error
     // commentary or recovery explanations after failed (7) or cancelled (6) tools.
+    // If agy has committed stepType 101 (stop_hook) for this turn, it is conclusively completed.
+    if (this.hasStep101AfterUser && isTerminalStepStatus(this._latestStepStatus)) {
+      return true;
+    }
     return this._latestStepType === 15 && isTerminalStepStatus(this._latestStepStatus);
   }
 
@@ -349,6 +362,9 @@ export class StreamPoller {
         this.observedUserStepIdxs.add(row.idx);
         this._lastUserStepIdx = Math.max(this._lastUserStepIdx, row.idx);
       }
+      if (row.stepType === 101) {
+        this._latestStep101Idx = Math.max(this._latestStep101Idx, row.idx);
+      }
       if (row.task?.taskId && !this._launchedTaskIdxs.has(row.task.taskId)) {
         this._launchedTaskIdxs.set(row.task.taskId, row.idx);
       }
@@ -363,8 +379,9 @@ export class StreamPoller {
       const taskLaunchIdx = row.task?.taskId ? this._launchedTaskIdxs.get(row.task.taskId) : undefined;
       const isTaskTerminalRow =
         taskLaunchIdx !== undefined &&
-        (row.idx > taskLaunchIdx || row.stepType !== 21) &&
-        isTerminalStepStatus(row.status);
+        (row.idx > taskLaunchIdx
+          ? isTerminalStepStatus(row.status)
+          : row.stepType !== 21 && row.status === 3);
       if (
         (isSystemMessage(text) || isTaskTerminalRow) &&
         isTerminalStepStatus(row.status)
@@ -379,7 +396,7 @@ export class StreamPoller {
         // before a later launch would otherwise close that newer task on the
         // next revision. Only tasks launched BEFORE this row can complete here.
         const launchedBefore = [...this._launchedTaskIdxs]
-          .filter(([, launchIdx]) => launchIdx < row.idx || (launchIdx === row.idx && row.stepType !== 21))
+          .filter(([, launchIdx]) => launchIdx < row.idx || (launchIdx === row.idx && row.stepType !== 21 && row.status === 3))
           .map(([taskId]) => taskId);
         let matchedTask = false;
         if (row.task?.taskId && isTaskTerminalRow) {

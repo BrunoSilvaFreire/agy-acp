@@ -37,12 +37,7 @@ export interface AskQuestionPayload {
  */
 export function isBridgeablePermissionTool(toolName: string): boolean {
   if (!toolName || toolName === "ask_question") return false;
-  if (toolName === "run_command") return true;
-  if (toolName === "ask_permission") return true;
-  if (toolName === "manage_task") return true;
-  if (toolName === "view_file" || toolName === "list_dir") return true;
-  if (isEditToolName(toolName)) return true;
-  return false;
+  return true;
 }
 
 export function isEditToolName(toolName: string): boolean {

@@ -511,6 +511,12 @@ describe("permission bridge", () => {
           commandResult: encodeCommandResult({ command: "echo hello", output: "hello\n" })
         })
       });
+      insertStep(db, {
+        idx: 2,
+        stepType: 101,
+        status: 3,
+        stepPayload: encodeStepPayload({})
+      });
       db.close();
     });
     // Set a very long timeout (60s). Must resolve via quiescence in < 2s rather than waiting 60s.
